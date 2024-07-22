@@ -1,11 +1,28 @@
+# for the evaluation of the model created in sarsa.py
+import pickle as pkl
+import cv2
 import gym
 import numpy as np
-import cv2
 
 cliffEnv = gym.make('CliffWalking-v0', render_mode='ansi')
 
+# making use of the q_table created in sarsa.py
+q_table = pkl.load(open("sarsa_q_table.pkl", "rb"))
 
-# ... (keep your initialize_frame and put_agent functions as they are) ...
+
+def policy(state, explore=0.0):
+    # explore refers to epsilon
+    # the epsilon greedy algorithm states the following :
+    #   1) take a random action with epsilon probability
+    #   2) take the optimal action (argmax( Q(s,a) ) with 1 - epsilon probability
+
+    if np.random.random() <= explore:
+        action = np.random.randint(0, 4)  # select from all 4 actions and return a scalar
+    else:
+        action = (int(np.argmax(q_table[state])))
+    return action
+
+
 def initialize_frame():
     width, height = 600, 200
     img = np.ones(shape=(height, width, 3)) * 255.0
@@ -50,24 +67,24 @@ def put_agent(img, state):
     return img
 
 
-# this boolean marks whether the episode has ended or not, so TRUE means ended
-done = False
+NUM_EPISODES = 5
+for episode in range(NUM_EPISODES):
+    frame = initialize_frame()  # initializing a frame
+    done = False
+    total_reward = 0
+    episode_length = 0
+    state, _ = cliffEnv.reset()
+    while not done:
+        frame2 = put_agent(frame.copy(),state)
+        cv2.imshow("Cliff Walking (SARSA)", frame2)
+        cv2.waitKey(250)  # wait for 250 ms
+        # not passing any epsilon to make it the optimal policy
+        action = policy(state)
+        state, reward, done, trunc, _ = cliffEnv.step(action)
+        total_reward += reward
+        episode_length += 1
 
-frame = initialize_frame()
+    print(f"The reward for episode {episode} is {total_reward}, the episode length is {episode_length}")
 
-# the following command initializes the environment and returns a new state
-state, _ = cliffEnv.reset()  # Unpack the returned tuple
-
-print("Initial state:", state)  # Add this line to see what state looks like
-
-# while episode has not ended
-while not done:
-    frame2 = put_agent(frame.copy(), state)
-    cv2.imshow("Cliff Walking", frame2)
-    cv2.waitKey(250)
-    # in this, our policy tells us to randomly select one of the 4 directions as actions
-    action = np.random.randint(low=0, high=4)
-    state, reward, done, trunc, _ = cliffEnv.step(action)
-    print("New state:", state)  # Add this line to see how state changes
-
-cliffEnv.close()
+# The output showed a reward of -17 and a solution path which was
+# suboptimal (as mentioned in Sutton and Barto )
