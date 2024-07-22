@@ -1,4 +1,4 @@
-# for the evaluation of the model created in sarsa.py
+# for the evaluation of the model created in q_learning.py
 import pickle as pkl
 import cv2
 import gym
@@ -7,7 +7,7 @@ import numpy as np
 cliffEnv = gym.make('CliffWalking-v0', render_mode='ansi')
 
 # making use of the q_table created in sarsa.py
-q_table = pkl.load(open("sarsa_q_table.pkl", "rb"))
+q_table = pkl.load(open("q_learning_q_table.pkl", "rb"))
 
 
 def policy(state, explore=0.0):
@@ -76,7 +76,7 @@ for episode in range(NUM_EPISODES):
     state, _ = cliffEnv.reset()
     while not done:
         frame2 = put_agent(frame.copy(),state)
-        cv2.imshow("Cliff Walking (SARSA)", frame2)
+        cv2.imshow("Cliff Walking (Q Learning)", frame2)
         cv2.waitKey(250)  # wait for 250 ms
         # not passing any epsilon to make it the optimal policy
         action = policy(state)
