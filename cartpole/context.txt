@@ -1,0 +1,9 @@
+This directory contains code for the CartPole problem. In this case, I have used both a neural network and reinforcement learning.
+
+make sure to do :
+pip install gymnasium[classic_control]
+to install pygame as it does not come with gym library beforehand
+
+note that, in this case, I have used gymnasium instead of gym, as that
+library is deprecated, and gymnasium has all the latest updates.
+
