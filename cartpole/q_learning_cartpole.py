@@ -2,77 +2,102 @@ import gymnasium as gym
 import tensorflow as tf
 from keras import Model, Input
 from keras.layers import Dense
+from keras.optimizers import Adam
+import numpy as np
+from collections import deque
+import random
 
 env = gym.make("CartPole-v1", render_mode="rgb_array")
 
-# Q Network ( not table )
-net_input = Input(shape=(4,))
-x = Dense(64, activation="relu")(net_input)
-x = Dense(32, activation="relu")(x)
-output = Dense(2, activation="linear")(x)
-q_net = Model(inputs=net_input, outputs=output)
 
-# keras or tensorflow requires the input of this network to not be just a single
-# tensor of shape 4 , but rather a batch of observations.
-# so if we pass only 1 observation in the batch , then the shape will be [1,4]
+# Q Network
+def create_q_model(state_shape, action_shape):
+    inputs = Input(shape=state_shape)
+    x = Dense(64, activation="relu")(inputs)
+    x = Dense(64, activation="relu")(x)
+    outputs = Dense(action_shape, activation="linear")(x)
+    return Model(inputs=inputs, outputs=outputs)
 
-# the output will be a batch of observations that we have given, like [1,2] , 2
-# being the number of actions/q values
+
+state_shape = env.observation_space.shape
+action_shape = env.action_space.n
+
+q_net = create_q_model(state_shape, action_shape)
+target_q_net = create_q_model(state_shape, action_shape)
+
+
 
 # Parameters
 ALPHA = 0.001
 EPSILON = 1.0
-EPSILON_DECAY = 1.001
+EPSILON_MIN = 0.01
+EPSILON_DECAY = 0.995
 GAMMA = 0.99
 NUM_EPISODES = 500
+BATCH_SIZE = 64
+UPDATE_TARGET_EVERY = 5
+MEMORY_SIZE = 10000
+
+# Compile the models
+q_net.compile(optimizer=Adam(learning_rate=ALPHA), loss='mse')
+target_q_net.compile(optimizer=Adam(learning_rate=ALPHA), loss='mse')
+
+optimizer = Adam(learning_rate=ALPHA)
+memory = deque(maxlen=MEMORY_SIZE)
 
 
-def policy(state, explore=0.0):
-    action = tf.argmax(q_net(state)[0], output_type=tf.int32)  # extracting from the output , which has shape (1,2)
-    if tf.random.uniform(shape=(), maxval=1) <= explore:
-        action = tf.random.uniform(shape=(), minval=0, maxval=2, dtype=tf.int32)
-    return action
+def policy(state, epsilon):
+    if np.random.random() < epsilon:
+        return env.action_space.sample()
+    q_values = q_net.predict(state[np.newaxis], verbose=0)
+    return np.argmax(q_values[0])
+
+
+def train(batch_size):
+    if len(memory) < batch_size:
+        return
+
+    minibatch = random.sample(memory, batch_size)
+    states = np.array([transition[0] for transition in minibatch])
+    actions = np.array([transition[1] for transition in minibatch])
+    rewards = np.array([transition[2] for transition in minibatch])
+    next_states = np.array([transition[3] for transition in minibatch])
+    dones = np.array([transition[4] for transition in minibatch])
+
+    target_q_values = target_q_net.predict(next_states, verbose=0)
+    max_target_q_values = np.max(target_q_values, axis=1)
+    targets = rewards + (1 - dones) * GAMMA * max_target_q_values
+
+    q_values = q_net.predict(states, verbose=0)
+    q_values[np.arange(batch_size), actions] = targets
+
+    q_net.fit(states, q_values, verbose=0)
 
 
 for episode in range(NUM_EPISODES):
-    done = False
-    total_reward = 0
-    episode_length = 0
     state, _ = env.reset()
-    state = tf.convert_to_tensor([state])
+    done = False
+    episode_reward = 0
+    episode_length = 0
 
     while not done:
         action = policy(state, EPSILON)
-        next_state, reward, done, trunc, _ = env.step(action.numpy())
-        next_state = tf.convert_to_tensor([next_state])
-        next_action = policy(next_state)
-        target = reward + GAMMA * q_net(next_state)[0][next_action]
-
-        if done:
-            target = reward
-
-        with tf.GradientTape() as tape:
-            current = q_net(state)
-
-        grads = tape.gradient(current,q_net.trainable_weights)
-        delta = target - current[0][action]
-        for j in range(len(grads)):
-            # since we are dealing with tensors , normal plus operation won't work
-            # hence , need to use assign_add
-            q_net.trainable_weights[j].assign_add(ALPHA * delta * grads[j])
-
-        state = next_state
-        action = next_action
-        total_reward += reward
+        next_state, reward, done, truncated, _ = env.step(action)
+        episode_reward += reward
         episode_length += 1
-    print(f"The reward for episode {episode} is {total_reward}, the episode length is {episode_length}, the epsilon is {EPSILON}")
-    EPSILON /= EPSILON_DECAY
 
-# saving the q_network
-q_net.save("q_learning_q_net")
+        memory.append((state, action, reward, next_state, done))
+        state = next_state
+
+        train(BATCH_SIZE)
+
+    if episode % UPDATE_TARGET_EVERY == 0:
+        target_q_net.set_weights(q_net.get_weights())
+
+    EPSILON = max(EPSILON_MIN, EPSILON * EPSILON_DECAY)
+
+    print(f"Episode: {episode}, Reward: {episode_reward}, Length: {episode_length}, Epsilon: {EPSILON:.4f}")
+
+# Save the model
+q_net.save("improved_q_learning_q_net")
 env.close()
-
-# initially the episode length was not increasing upto 500
-# one problem can be that the fixed value of epsilon. To counter this problem,
-# we can add some decay
-
